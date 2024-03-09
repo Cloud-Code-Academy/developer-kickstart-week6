@@ -39,9 +39,9 @@ public with sharing class AccountHelper {
     }
 
     public static void createDefaultContact (List<Account> accountList) {
+        final String DEFAULT_LAST_NAME = 'DefaultContact';
+        final String DEFAULT_EMAIL = 'default@email.com';
         if (!accountList.isEmpty()) {
-            final string DEFAULT_LAST_NAME = 'DefaultContact';
-            final String DEFAULT_EMAIL = 'default@email.com';
             List<Contact> newContacts = new List<Contact>();
             for (Account acc : accountList) {
                 Contact defaultContact = new Contact (

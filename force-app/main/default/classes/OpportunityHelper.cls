@@ -14,45 +14,38 @@ public with sharing class OpportunityHelper {
     public static void setOppPrimaryContactToCeo (List<Opportunity> oppList, Map<Id, Opportunity> oppsById) {
         if (!oppList.isEmpty()) {
             final String CONTACT_TITLE_TO_QUERY = 'CEO';
-            Set<Id> oppIds = new Set<Id>(oppsById.keySet());
             Set<Id> accountIdsFromOpps = new Set<Id>();
             for (Opportunity opp : oppList) {
                     accountIdsFromOpps.add(opp.AccountId);
             }
-            List<Account> accCeoContactAndOppsToUpdate = [
-                // This query took some work trial / error, so I'm definitely curious if there is a better way
-                // Get Accounts associated with the Opps in the Trigger
-                SELECT Id, 
-                    // Get 1 Contact associated with each Account that has the target Title
-                    (SELECT Id, Title
-                    FROM Contacts
-                    WHERE Title = :CONTACT_TITLE_TO_QUERY
-                    LIMIT 1), 
-                    // Get all child Opps from the Trigger that don't have a Primary Contact with the target Title
-                    (SELECT Id, Primary_Contact__c
-                    FROM Opportunities
-                    WHERE Id IN :oppIds
-                    AND Primary_Contact__r.Title != :CONTACT_TITLE_TO_QUERY)
-                FROM Account
-                WHERE Id IN :accountIdsFromOpps
-                // Filter so Accounts (+ their child records) are only returned if the Account has a Contact with the target Title...
-                AND Id IN (
-                    SELECT AccountId
-                    FROM Contact
-                    WHERE Title = :CONTACT_TITLE_TO_QUERY)
-                // ... and at least 1 Opp from the Trigger that doesn't have a Primary Contact with the target title (the opps to update)
-                AND Id IN (
-                    SELECT AccountId
-                    FROM Opportunity
-                    WHERE Id IN :oppIds
-                    AND Primary_Contact__r.Title != :CONTACT_TITLE_TO_QUERY)
+            // Get Opps in the Trigger that do not have a Primary Contact with the correct Title
+            List<Opportunity> oppsWithoutTitle = [
+                SELECT Id, AccountId, Primary_Contact__r.Title
+                FROM Opportunity
+                WHERE Id IN :oppsById.keySet()
+                AND Primary_Contact__r.Title != :CONTACT_TITLE_TO_QUERY
             ];
-            // Loop the Accounts and their respective Opps to set the Primary Contact to the CEO Contact
-            if (!accCeoContactAndOppsToUpdate.isEmpty()) {
-                for (Account account : accCeoContactAndOppsToUpdate) {
-                    for (Opportunity opportunity : account.Opportunities) {
-                        oppsById.get(opportunity.Id).Primary_Contact__c = account.Contacts.get(0).Id;
-                    }
+            // From the Accounts associated with the Opps in the Trigger, get all Contacts that have the correct title
+            List<Contact> contactsWithTitle = [
+                SELECT Id, AccountId, Title 
+                FROM Contact
+                WHERE AccountId IN :accountIdsFromOpps
+                AND Title = :CONTACT_TITLE_TO_QUERY
+            ];
+            Map<Id, Contact> contactWithTitleByAccountId = new Map<Id, Contact>();
+            for (Contact con : contactsWithTitle) {
+                Id contactAccountId = con.AccountId;
+                // If the Map doesn't already contain the Account Id and Contact with the target Title, add it to the Map
+                if (contactWithTitleByAccountId.get(contactAccountId) == null) {
+                    contactWithTitleByAccountId.put(contactAccountId, con);
+                }
+            }
+            for (Opportunity opp : oppsWithoutTitle) {
+                Contact accountContactWithTitle = contactWithTitleByAccountId.get(opp.AccountId);
+                // If the Map contains the Account on the Opp, set the Primary Contact on the Opp to the associated Contact in the Map
+                // If the Map doesn't contain the Account on the Opp, it has no Contact with the correct title, so take no action
+                if (accountContactWithTitle != null) {
+                    oppsById.get(opp.Id).Primary_Contact__c = accountContactWithTitle.Id;
                 }
             }
         }
